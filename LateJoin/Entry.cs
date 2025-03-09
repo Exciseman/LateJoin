@@ -8,14 +8,15 @@ using Photon.Pun;
 using Steamworks;
 using Steamworks.Data;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace LateJoin
 {
-    [BepInPlugin("nickklmao.latejoin", MOD_NAME, "1.0.0")]
+    [BepInPlugin(MOD_GUID, MOD_NAME, MOD_VERSION)]
     internal sealed class Entry : BaseUnityPlugin
     {
+        private const string MOD_GUID = "excisemen.latejoin";
         private const string MOD_NAME = "Late Join";
+        private const string MOD_VERSION = "0.0.1";
 
         internal static readonly ManualLogSource logger = BepInEx.Logging.Logger.CreateLogSource(MOD_NAME);
 
