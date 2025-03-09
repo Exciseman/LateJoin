@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
@@ -33,8 +34,11 @@ namespace LateJoin
                 SteamManager.instance.LockLobby();
             
             PhotonNetwork.CurrentRoom.IsOpen = canJoin;
+
+            _playersJoining.Clear();
         }
 
+        /* Fixes players teleporting when another player late joins
         private static void PlayerAvatar_SpawnHook(Action<PlayerAvatar, Vector3, Quaternion> orig, PlayerAvatar self, Vector3 position, Quaternion rotation)
         {
             if ((bool) AccessTools.Field(typeof(PlayerAvatar), "spawned").GetValue(self))
@@ -42,33 +46,43 @@ namespace LateJoin
             
             orig.Invoke(self, position, rotation);
         }
+        */
 
-        private static async void SteamManager_OnGameLobbyJoinRequestedHook(SteamManager self, Lobby _lobby, SteamId _steamID)
+        // Temporary fix to load in players. Reloads the lobby whenever a new player loads in
+        private static HashSet<string> _playersJoining = new HashSet<string>();
+
+        private static void SteamManager_OnLobbyMemberJoinedHook(Action<SteamManager, Lobby, Friend> orig, SteamManager self, Lobby _lobby, Friend _friend)
         {
-            var currentLobby = (Lobby) AccessTools.Field(typeof(SteamManager), "currentLobby").GetValue(self);
-            
-            if (_lobby.Id == currentLobby.Id)
+            orig(self, _lobby, _friend);
+            if (SemiFunc.IsMasterClient() && SemiFunc.RunIsLobby())
+                _playersJoining.Add(_friend.Id.Value.ToString());
+        }
+
+        private static void SteamManager_OnLobbyMemberLeftHook(Action<SteamManager, Lobby, Friend> orig, SteamManager self, Lobby _lobby, Friend _friend)
+        {
+            orig(self, _lobby, _friend);
+            if (SemiFunc.IsMasterClient())
+                _playersJoining.Remove(_friend.Id.Value.ToString());
+        }
+
+        private static void PlayerAvatar_SpawnHook(Action<PlayerAvatar, Vector3, Quaternion> orig, PlayerAvatar self, Vector3 position, Quaternion rotation)
+        {
+            orig.Invoke(self, position, rotation);
+
+            string id = (string)AccessTools.Field(typeof(PlayerAvatar), "steamID").GetValue(self);
+            if (_playersJoining.Contains(id))
             {
-                Debug.Log("Steam: Already in this lobby.");
-            }
-            else
-            {
-                Debug.Log("Steam: Game lobby join requested: " + _lobby.Id);
-                
-                await SteamMatchmaking.JoinLobbyAsync(_lobby.Id);
-                
-                AccessTools.Field(typeof(RunManager), "lobbyJoin").SetValue(RunManager.instance, true);
-                RunManager.instance.ChangeLevel(true, false);
-                
-                AccessTools.Field(typeof(SteamManager), "joinLobby").SetValue(self, true);
+                _playersJoining.Remove(id);
+                RunManager.instance.RestartScene();
             }
         }
-        
+
         private void Awake()
         {
             new Hook(AccessTools.Method(typeof(RunManager), "ChangeLevel"), RunManager_ChangeLevelHook);
+            new Hook(AccessTools.Method(typeof(SteamManager), "OnLobbyMemberJoined"), SteamManager_OnLobbyMemberJoinedHook);
+            new Hook(AccessTools.Method(typeof(SteamManager), "OnLobbyMemberLeft"), SteamManager_OnLobbyMemberLeftHook);
             new Hook(AccessTools.Method(typeof(PlayerAvatar), "Spawn"), PlayerAvatar_SpawnHook);
-            new Hook(AccessTools.Method(typeof(SteamManager), "OnGameLobbyJoinRequested"), SteamManager_OnGameLobbyJoinRequestedHook);
         }
     }
 }
